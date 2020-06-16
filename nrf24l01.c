@@ -1,4 +1,4 @@
-#include "__nrf24l01.h"
+#include "nrf24l01.h"
 
 SPI_HandleTypeDef *nrf24l01_spi;
 
