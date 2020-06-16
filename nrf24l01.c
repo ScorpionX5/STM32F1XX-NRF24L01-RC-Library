@@ -1,33 +1,17 @@
-#include "nrf24l01.h"
+#include "NRF24/nrf24l01.h"
+#include "NRF24/nrf24_configuration.h"
+#include "NRF24/nrf24_defines.h"
+#include "quadrocopter.h"
 
 SPI_HandleTypeDef *nrf24l01_spi;
 
-uint8_t REUSE_TX_PAYLOAD			= DISABLED;				//reuse last transmitted payload: disabled
-uint8_t DISABLE_INTERRUPTS_ON_IRQ	= INTERRUPT_ALL;		//disable all interrupts on the IRQ-Pin
-uint8_t CRC_CONFIG					= CRC_2_BYTE;			//use 2 bytes CRC
-uint8_t POWER_STATE					= POWER_UP;				//device is powered up
-uint8_t MODE						= PTX;					//device used as primary transmitter
-uint8_t AUTO_ACKNOWLEDGE			= ENABLED;				//auto acknowledge pipe 0
-uint8_t ADDRESS_WIDTH				= AW_3_BYTE;			//address width is 3 bytes
-uint8_t ARD							= ARD_500us;			//auto retransmit delay: 500us
-uint8_t ARC							= 7;					//auto retransmit count: 7 retransmits (max 15)
-uint8_t RF_CHANNEL					= 120;					//RF channel frequency = 2400 + 120 MHz (max 2525 MHz)
-uint8_t CONTINUOUS_WAVE				= DISABLED;				//continuous carrier transmit disabled
-uint8_t DATA_RATE					= DR_1_MBPS;			//data rate: 1 Mbps
-uint8_t RF_POWER					= POWER_MINUS_0_DBM;	//maximum transmit power
-uint8_t ADDRESS[] 					= { 0xD1, 0xD1, 0xD1 };	//tx address and rx address of pipe 0
-uint8_t PAYLOAD_WIDTH				= 0;					//payload size: 0 bytes
-uint8_t DYN_PAYLOAD_WIDTH			= ENABLED;				//dynamic payload size: enabled
-uint8_t ACK_PAYLOAD					= ENABLED;				//send payload with acknowledge: enabled
-uint8_t DYN_ACK						= ENABLED;				//dynamic acknowledge: allow sending packet without requesting ACK
-uint32_t TX_TIMEOUT					= 7000;					//wait 7000us for TX timeout
 
 uint16_t send_counter = 0;									//on send packet: +(1+ARC)
 uint16_t lost_counter = 0;									//on failed retransmit: +1 ; on failed packet: +(1+ARC)
 float signal_quality = 0;									//signal quality: 0-100%
 
 //initialize nrf24l01
-uint8_t nrf24l01_Init(enum Mode mode, SPI_HandleTypeDef *spi_handle)
+uint8_t nrf24l01_Init(NRF24_Mode mode, SPI_HandleTypeDef *spi_handle)
 {
 	//set variables and pins
 	nrf24l01_spi = spi_handle;
@@ -117,26 +101,26 @@ uint8_t nrf24l01_Transmit(uint8_t *payload, uint8_t size, uint8_t ack, uint8_t *
 	//clear interrupts and RX FIFO to be sure to receive the acknowledge (if RX-FIFO is full, acknowledge won't be received)
 	nrf24l01_Interface(CMD_FLUSH_RX, &unused, 0);
 	nrf24l01_ClearInterrupts(INTERRUPT_ALL);
-	enum Interrupts interrupts = INTERRUPT_NONE;
+	NRF24_Interrupts interrupts = INTERRUPT_NONE;
 
 	//transmit packet
 	nrf24l01_SetPin(PIN_CE, HIGH);
-	uint32_t time = micros();
-	while (micros() < time + 25);
+	uint32_t time = timeMicroseconds();
+	while (timeMicroseconds() < time + 25);
 	nrf24l01_SetPin(PIN_CE, LOW);
 
 	//if ACK expected
 	if (ack)
 	{
 		//poll for feedback (data sent, max retransmits, or timeout)
-		time = micros();
-		while (micros() < time + TX_TIMEOUT)
+		time = timeMicroseconds();
+		while (timeMicroseconds() < time + TX_TIMEOUT)
 		{
 			nrf24l01_GetSTATUS(&interrupts, &unused, &unused);
 			if (interrupts != INTERRUPT_NONE) break;
 		}
-		uint32_t time = micros();
-		while (micros() < time + 50);
+		uint32_t time = timeMicroseconds();
+		while (timeMicroseconds() < time + 50);
 		nrf24l01_GetSTATUS(&interrupts, &unused, &unused);
 
 		//get acknowledge
@@ -180,7 +164,7 @@ uint8_t nrf24l01_Receive(uint8_t *payload)
 {
 	//set variables
 	uint8_t size = 0;
-	enum PipeNumber pipe = PIPE_NO_NOT_USED;
+	NRF24_PipeNumber pipe = PIPE_NO_NOT_USED;
 
 	//check status for receive pipe
 	nrf24l01_GetSTATUS(&unused, &pipe, &unused);
@@ -203,7 +187,7 @@ void nrf24l01_WriteACKPayload(uint8_t *payload, uint8_t size)
 	nrf24l01_Interface(CMD_W_ACK_PAYLOAD | PIPE_NO_0, payload, size);
 }
 
-void nrf24l01_GetSTATUS(enum Interrupts *interrupts, enum PipeNumber *pipe, uint8_t *tx_full)
+void nrf24l01_GetSTATUS(NRF24_Interrupts *interrupts, NRF24_PipeNumber *pipe, uint8_t *tx_full)
 {
 	uint8_t status = nrf24l01_Interface(CMD_NOP, 0, 0);
 	*interrupts = status & MASK_INTERRUPTS;
@@ -226,7 +210,7 @@ uint8_t nrf24l01_GetRPD()
 	return rpd & MASK_RPD;
 }
 
-void nrf24l01_GetFIFO_STATUS(uint8_t *tx_reuse, enum FifoStatus *tx_fifo_status, enum FifoStatus *rx_fifo_status)
+void nrf24l01_GetFIFO_STATUS(uint8_t *tx_reuse, NRF24_FifoStatus *tx_fifo_status, NRF24_FifoStatus *rx_fifo_status)
 {
 	uint8_t fifo_status;
 	nrf24l01_Interface(READ | REG_FIFO_STATUS, &fifo_status, 1);
@@ -235,7 +219,7 @@ void nrf24l01_GetFIFO_STATUS(uint8_t *tx_reuse, enum FifoStatus *tx_fifo_status,
 	*rx_fifo_status = fifo_status & MASK_RX_FIFO_STATUS;
 }
 
-void nrf24l01_ClearInterrupts(enum Interrupts interrupts)
+void nrf24l01_ClearInterrupts(NRF24_Interrupts interrupts)
 {
 	nrf24l01_Interface(WRITE | REG_STATUS, &interrupts, 1);
 }
@@ -252,7 +236,7 @@ uint16_t nrf24l01_GetFrequency()
 	return 2400 + RF_CHANNEL;
 }
 
-uint8_t nrf24l01_Interface(enum Command command, uint8_t *data_bytes, uint8_t size)
+uint8_t nrf24l01_Interface(NRF24_Command command, uint8_t *data_bytes, uint8_t size)
 {
 	nrf24l01_SetPin(PIN_CSN, LOW);
 
@@ -286,7 +270,7 @@ void nrf24l01_ReadSPI(uint8_t *rx_buff, uint8_t size)
 	HAL_SPI_TransmitReceive(nrf24l01_spi, tx_buff, rx_buff, size, HAL_MAX_DELAY);
 }
 
-void nrf24l01_SetPin(enum Pin pin, enum PinState state)
+void nrf24l01_SetPin(NRF24_Pin pin, NRF24_PinState state)
 {
 	HAL_GPIO_WritePin(GPIOB, pin, state);
 }
