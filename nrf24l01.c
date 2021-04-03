@@ -2,6 +2,7 @@
 #include "NRF24/nrf24_configuration.h"
 #include "NRF24/nrf24_defines.h"
 #include "quadrocopter.h"
+#include "timing.h"
 
 SPI_HandleTypeDef *nrf24l01_spi;
 
